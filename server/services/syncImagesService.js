@@ -1,46 +1,49 @@
+import { pool } from '../db/db.js';
 
-import { pool } from '../db/pool.js';
-
-function normalizeRow(r) {
-  return {
-    empresa: String(r.empresa ?? '001'),
-    ejercicio: Number(r.ejercicio ?? 2025),
-    codprodu: String(r.codprodu ?? '').trim(),
-    linea: Number(r.linea ?? 1),
-    descripcion: r.descripcion ?? null,
-    codclaarchivo: String(r.codclaarchivo ?? '').trim(),
-    ficadjunto: String(r.ficadjunto ?? '').trim(),
-    tipdocasociado: r.tipdocasociado ?? null,
-    fecalta: r.fecalta ? new Date(r.fecalta) : new Date(),
-    fecftpmod: r.fecftpmod ? new Date(r.fecftpmod) : null,
-  };
+function toMs(dateOrMs) {
+  if (!dateOrMs) return null;
+  if (dateOrMs instanceof Date) return dateOrMs;
+  const n = Number(dateOrMs);
+  return Number.isFinite(n) ? new Date(n) : null;
 }
 
-export async function upsertImages(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return 0;
+function dedupeByKey(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.codprodu}|${r.codclaarchivo}`;
+    const prev = map.get(key);
+    const rMs = r?.fecftpmod ? new Date(r.fecftpmod).getTime() : 0;
+    const pMs = prev?.fecftpmod ? new Date(prev.fecftpmod).getTime() : 0;
+    if (!prev || rMs >= pMs) map.set(key, r);
+  }
+  return Array.from(map.values());
+}
 
-  const normalized = rows.map(normalizeRow).filter(r => r.codprodu && r.codclaarchivo);
-  if (normalized.length === 0) return 0;
+export async function upsertImagesBatch(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return { insertedOrUpdated: 0 };
+
+  const uniqueRows = dedupeByKey(rows);
 
   const valuesSql = [];
   const params = [];
   let i = 1;
 
-  for (const r of normalized) {
+  for (const r of uniqueRows) {
     valuesSql.push(
       `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
     );
+
     params.push(
-      r.empresa,
-      r.ejercicio,
-      r.codprodu,
-      r.linea,
-      r.descripcion,
-      r.codclaarchivo,
-      r.ficadjunto,
-      r.tipdocasociado,
-      r.fecalta,
-      r.fecftpmod
+      r.empresa ?? '001',
+      Number(r.ejercicio ?? 2025),
+      String(r.codprodu),
+      Number(r.linea ?? 1),
+      r.descripcion ?? null,
+      String(r.codclaarchivo),
+      String(r.ficadjunto),
+      r.tipdocasociado ?? null,
+      toMs(r.fecalta) ?? new Date(),
+      toMs(r.fecftpmod) ?? null
     );
   }
 
@@ -58,5 +61,6 @@ export async function upsertImages(rows) {
   `;
 
   await pool.query(sql, params);
-  return normalized.length;
+
+  return { insertedOrUpdated: uniqueRows.length };
 }

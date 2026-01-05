@@ -1,13 +1,11 @@
+import { getStatus } from '../models/statusModel.js';
+import { runSync } from '../services/syncService.js';
 
-import { upsertImages } from '../services/syncImagesService.js';
-import { upsertDirState } from '../services/dirStateService.js';
-
-export async function upsertImagesBatch(rows) {
-  const insertedOrUpdated = await upsertImages(rows);
-  return { insertedOrUpdated };
+export async function getStatusHandler(req, res) {
+    return res.json(getStatus());
 }
 
-export async function upsertDirStateBatch(rows) {
-  const updated = await upsertDirState(rows);
-  return { updated };
+export async function runSyncHandler(req, res) {
+    const result = await runSync('manual');
+    return res.json(result);
 }
