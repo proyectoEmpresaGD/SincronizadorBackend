@@ -17,11 +17,7 @@ export function esArchivoIgnorable(nombre = '') {
 }
 
 export function esCarpetaExcluida(nombreCarpeta = '') {
-    const n = String(nombreCarpeta)
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase();
-
+    const n = normalizarNombre(nombreCarpeta);
     return (
         n.includes('ALTA') ||
         n.includes('BRUTOS') ||
@@ -29,7 +25,6 @@ export function esCarpetaExcluida(nombreCarpeta = '') {
         n.includes('ORIGINAL')
     );
 }
-
 
 export function esImagen(nombre = '') {
     const n = String(nombre).toLowerCase();
@@ -49,46 +44,23 @@ export function extraerCodigoProducto(nombre = '') {
     return (idx === -1 ? s : s.slice(0, idx)).trim();
 }
 
-// Compatibilidad (no se usa en la recursión principal)
-export function mapearCodClaArchivo(carpeta = '') {
-    const n = normalizarNombre(carpeta);
-
-    if (n.includes('ART')) return 'ARTISTICA';
-    if (n.includes('AMBIENTE') || n.includes('AMBIENT') || n === 'AMB') return 'AMBIENTE';
-    if (n.includes('PROD')) return 'PRODUCTO';
-
-    if (n.includes('BUENA') || n.includes('ALTA')) return 'PRODUCTO_BUENA';
-    if (n.includes('BAJA')) return 'PRODUCTO_BAJA';
-
-    return null;
-}
+/* === Contexto CODCLA === */
 
 function detectarCategoria(nombreCarpeta = '') {
     const n = normalizarNombre(nombreCarpeta);
-
     if (n.includes('ART')) return 'ARTISTICA';
     if (n.includes('AMBIENTE') || n.includes('AMBIENT') || n === 'AMB') return 'AMBIENTE';
     if (n.includes('PROD')) return 'PRODUCTO';
-
     return null;
 }
 
 function detectarCalidad(nombreCarpeta = '') {
     const n = normalizarNombre(nombreCarpeta);
-
     if (n.includes('BUENA') || n.includes('ALTA')) return 'BUENA';
     if (n.includes('BAJA')) return 'BAJA';
-
     return null;
 }
 
-/**
- * Contexto heredado: { categoria, calidad }
- * - Si detecta categoría, resetea calidad.
- * - Si detecta calidad:
- *   - si NO hay categoría => asume PRODUCTO
- *   - si hay => aplica calidad a esa categoría
- */
 export function actualizarContextoCodCla(nombreCarpeta = '', contextoPadre = null) {
     const categoriaDetectada = detectarCategoria(nombreCarpeta);
     const calidadDetectada = detectarCalidad(nombreCarpeta);
