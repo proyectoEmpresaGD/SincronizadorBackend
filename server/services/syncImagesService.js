@@ -48,7 +48,7 @@ export async function upsertImagesBatch(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesocproductos_test (
+    INSERT INTO imagenesftpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
       ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
