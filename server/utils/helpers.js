@@ -48,8 +48,8 @@ export function extraerCodigoProducto(nombre = '') {
 
 function detectarCategoria(nombreCarpeta = '') {
     const n = normalizarNombre(nombreCarpeta);
-    if (n.includes('ART')) return 'ARTISTICA';
-    if (n.includes('AMBIENTE') || n.includes('AMBIENT') || n === 'AMB') return 'AMBIENTE';
+    if (n.includes('ARTISTICA')) return 'ARTISTICA';
+    if (n.includes('AMBIENTE') || n.includes('AMBIENT')) return 'AMBIENTE';
     if (n.includes('PROD')) return 'PRODUCTO';
     return null;
 }
