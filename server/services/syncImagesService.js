@@ -3,6 +3,7 @@ import { pool } from '../db/db.js';
 function toMs(dateOrMs) {
   if (!dateOrMs) return null;
   if (dateOrMs instanceof Date) return dateOrMs;
+
   const n = Number(dateOrMs);
   return Number.isFinite(n) ? new Date(n) : null;
 }
@@ -20,7 +21,27 @@ function isAmbiente(codclaarchivo = '') {
 }
 
 /**
- * Regla: segunda "palabra" del nombre (sin extensión), separadores: espacio, _ o -
+ * Devuelve el nombre de archivo a partir de una URL o ruta.
+ * Ej:
+ *  - "https://x/y/123%20SALON%2001.jpg" => "123 SALON 01.jpg"
+ *  - "/a/b/123 SALON 01.jpg" => "123 SALON 01.jpg"
+ */
+function extraerNombreArchivoDesdeFicAdjunto(ficadjunto = '') {
+  const s = String(ficadjunto || '').trim();
+  if (!s) return '';
+
+  const last = s.split('/').pop() || s;
+
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
+
+/**
+ * Regla: segunda "palabra" del nombre (sin extensión),
+ * separadores: espacio, _ o -
  * Ej: "123 SALON 01.jpg" => "SALON"
  */
 function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
@@ -32,14 +53,32 @@ function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
   return parts[1] ? normalizarTexto(parts[1]) : null;
 }
 
+function getTipoAmbienteFromRow(row) {
+  const tipoDirecto = normalizarTexto(row.tipoAmbiente || '');
+  if (tipoDirecto) return tipoDirecto;
+
+  const nombre = extraerNombreArchivoDesdeFicAdjunto(row.ficadjunto);
+  const tipoFromName = extraerTipoAmbienteDesdeNombre(nombre);
+
+  return tipoFromName || null;
+}
+
+/**
+ * Key:
+ * - NO AMBIENTE: codprodu|codclaarchivo
+ * - AMBIENTE: codprodu|codclaarchivo|tipoAmbiente
+ */
 function buildKey(row) {
   if (isAmbiente(row.codclaarchivo)) {
-    const tipo = normalizarTexto(row.tipoAmbiente || '') || extraerTipoAmbienteDesdeNombre(row.ficadjunto);
+    const tipo = getTipoAmbienteFromRow(row);
     return `${row.codprodu}|${row.codclaarchivo}|${tipo || ''}`;
   }
   return `${row.codprodu}|${row.codclaarchivo}`;
 }
 
+/**
+ * Dedupe por key quedándose con el más nuevo por fecftpmod
+ */
 function dedupeLatestByKey(rows) {
   const map = new Map();
 
@@ -68,9 +107,13 @@ function splitRows(rows) {
   return { ambiente, noAmbiente };
 }
 
-function enrichTipoAmbiente(rows) {
+/**
+ * AMBIENTE: asegura tipoAmbiente siempre que sea posible (si no viene, lo derivamos)
+ * NO AMBIENTE: se mantiene null
+ */
+function enrichTipoAmbienteAmbiente(rows) {
   return rows.map((r) => {
-    const tipo = normalizarTexto(r.tipoAmbiente || '') || extraerTipoAmbienteDesdeNombre(r.ficadjunto);
+    const tipo = getTipoAmbienteFromRow(r);
     return { ...r, tipoAmbiente: tipo || null };
   });
 }
@@ -164,15 +207,19 @@ async function upsertAmbiente(rows) {
 }
 
 export async function upsertImagesBatch(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return { insertedOrUpdated: 0 };
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { insertedOrUpdated: 0 };
+  }
 
   // 1) Separamos AMBIENTE / NO AMBIENTE
   const { ambiente, noAmbiente } = splitRows(rows);
 
-  // 2) AMBIENTE: aseguramos tipoAmbiente (si no viene, lo derivamos del nombre)
-  const ambienteEnriched = enrichTipoAmbiente(ambiente);
+  // 2) AMBIENTE: aseguramos tipoAmbiente (si no viene, lo derivamos)
+  const ambienteEnriched = enrichTipoAmbienteAmbiente(ambiente);
 
-  // 3) Dedupe: NO AMBIENTE por codprodu+codclaarchivo; AMBIENTE por codprodu+codclaarchivo+tipoAmbiente
+  // 3) Dedupe:
+  //    - NO AMBIENTE por codprodu+codclaarchivo
+  //    - AMBIENTE por codprodu+codclaarchivo+tipoAmbiente
   const uniqueNoAmbiente = dedupeLatestByKey(noAmbiente);
   const uniqueAmbiente = dedupeLatestByKey(ambienteEnriched);
 
