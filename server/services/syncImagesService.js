@@ -7,19 +7,46 @@ function toMs(dateOrMs) {
   return Number.isFinite(n) ? new Date(n) : null;
 }
 
-function isAmbiente(codclaarchivo = '') {
-  return String(codclaarchivo).toUpperCase().startsWith('AMBIENTE_');
+function normalizarTexto(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
 }
 
-function dedupeByKey(rows) {
+function isAmbiente(codclaarchivo = '') {
+  return normalizarTexto(codclaarchivo).startsWith('AMBIENTE_');
+}
+
+/**
+ * Regla: segunda "palabra" del nombre (sin extensión), separadores: espacio, _ o -
+ * Ej: "123 SALON 01.jpg" => "SALON"
+ */
+function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
+  const base = String(nombreArchivo || '')
+    .replace(/\.[^.]+$/, '')
+    .trim();
+
+  const parts = base.split(/[\s_-]+/).filter(Boolean);
+  return parts[1] ? normalizarTexto(parts[1]) : null;
+}
+
+function buildKey(row) {
+  if (isAmbiente(row.codclaarchivo)) {
+    const tipo = normalizarTexto(row.tipoAmbiente || '') || extraerTipoAmbienteDesdeNombre(row.ficadjunto);
+    return `${row.codprodu}|${row.codclaarchivo}|${tipo || ''}`;
+  }
+  return `${row.codprodu}|${row.codclaarchivo}`;
+}
+
+function dedupeLatestByKey(rows) {
   const map = new Map();
 
   for (const r of rows) {
-    const ambiente = isAmbiente(r.codclaarchivo);
-    const fic = ambiente ? `|${String(r.ficadjunto ?? '')}` : '';
-    const key = `${r.codprodu}|${r.codclaarchivo}${fic}`;
-
+    const key = buildKey(r);
     const prev = map.get(key);
+
     const rMs = r?.fecftpmod ? new Date(r.fecftpmod).getTime() : 0;
     const pMs = prev?.fecftpmod ? new Date(prev.fecftpmod).getTime() : 0;
 
@@ -29,19 +56,35 @@ function dedupeByKey(rows) {
   return Array.from(map.values());
 }
 
+function splitRows(rows) {
+  const ambiente = [];
+  const noAmbiente = [];
 
-export async function upsertImagesBatch(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return { insertedOrUpdated: 0 };
+  for (const r of rows) {
+    if (isAmbiente(r.codclaarchivo)) ambiente.push(r);
+    else noAmbiente.push(r);
+  }
 
-  const uniqueRows = dedupeByKey(rows);
+  return { ambiente, noAmbiente };
+}
+
+function enrichTipoAmbiente(rows) {
+  return rows.map((r) => {
+    const tipo = normalizarTexto(r.tipoAmbiente || '') || extraerTipoAmbienteDesdeNombre(r.ficadjunto);
+    return { ...r, tipoAmbiente: tipo || null };
+  });
+}
+
+async function upsertNoAmbiente(rows) {
+  if (rows.length === 0) return 0;
 
   const valuesSql = [];
   const params = [];
   let i = 1;
 
-  for (const r of uniqueRows) {
+  for (const r of rows) {
     valuesSql.push(
-      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
+      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
     );
 
     params.push(
@@ -51,6 +94,7 @@ export async function upsertImagesBatch(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
+      null, // tipoAmbiente (NO AMBIENTE)
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
       toMs(r.fecalta) ?? new Date(),
@@ -59,9 +103,9 @@ export async function upsertImagesBatch(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesftpproductos (
+    INSERT INTO imagenesocproductos_test (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
-      ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+      tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
     ON CONFLICT (codprodu, codclaarchivo)
@@ -72,6 +116,69 @@ export async function upsertImagesBatch(rows) {
   `;
 
   await pool.query(sql, params);
+  return rows.length;
+}
 
-  return { insertedOrUpdated: uniqueRows.length };
+async function upsertAmbiente(rows) {
+  if (rows.length === 0) return 0;
+
+  const valuesSql = [];
+  const params = [];
+  let i = 1;
+
+  for (const r of rows) {
+    valuesSql.push(
+      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
+    );
+
+    params.push(
+      r.empresa ?? '001',
+      Number(r.ejercicio ?? 2025),
+      String(r.codprodu),
+      Number(r.linea ?? 1),
+      r.descripcion ?? null,
+      String(r.codclaarchivo),
+      r.tipoAmbiente ?? null, // AMBIENTE usa tipoAmbiente
+      String(r.ficadjunto),
+      r.tipdocasociado ?? null,
+      toMs(r.fecalta) ?? new Date(),
+      toMs(r.fecftpmod) ?? null
+    );
+  }
+
+  const sql = `
+    INSERT INTO imagenesocproductos_test (
+      empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
+      tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+    )
+    VALUES ${valuesSql.join(',')}
+    ON CONFLICT (codprodu, tipoAmbiente, codclaarchivo)
+    DO UPDATE SET
+      ficadjunto = EXCLUDED.ficadjunto,
+      fecultmod = NOW(),
+      fecftpmod = EXCLUDED.fecftpmod
+  `;
+
+  await pool.query(sql, params);
+  return rows.length;
+}
+
+export async function upsertImagesBatch(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return { insertedOrUpdated: 0 };
+
+  // 1) Separamos AMBIENTE / NO AMBIENTE
+  const { ambiente, noAmbiente } = splitRows(rows);
+
+  // 2) AMBIENTE: aseguramos tipoAmbiente (si no viene, lo derivamos del nombre)
+  const ambienteEnriched = enrichTipoAmbiente(ambiente);
+
+  // 3) Dedupe: NO AMBIENTE por codprodu+codclaarchivo; AMBIENTE por codprodu+codclaarchivo+tipoAmbiente
+  const uniqueNoAmbiente = dedupeLatestByKey(noAmbiente);
+  const uniqueAmbiente = dedupeLatestByKey(ambienteEnriched);
+
+  // 4) Upserts separados (mantiene comportamiento actual en todo lo que no es AMBIENTE)
+  const insertedNoAmbiente = await upsertNoAmbiente(uniqueNoAmbiente);
+  const insertedAmbiente = await upsertAmbiente(uniqueAmbiente);
+
+  return { insertedOrUpdated: insertedNoAmbiente + insertedAmbiente };
 }

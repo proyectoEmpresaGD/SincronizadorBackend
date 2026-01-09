@@ -38,6 +38,18 @@ export function esImagen(nombre = '') {
     );
 }
 
+function getTipoAmbienteFromFilename(filename) {
+    const base = String(filename || '')
+        .replace(/\.[^.]+$/, '')
+        .trim();
+
+    const parts = base.split(/[\s_-]+/).filter(Boolean);
+    const tipo = parts[1] ?? null;
+
+    return tipo ? tipo.toUpperCase() : null;
+}
+
+
 export function extraerCodigoProducto(nombre = '') {
     const s = String(nombre);
     const idx = s.indexOf(' ');
