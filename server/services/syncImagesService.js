@@ -7,17 +7,28 @@ function toMs(dateOrMs) {
   return Number.isFinite(n) ? new Date(n) : null;
 }
 
+function isAmbiente(codclaarchivo = '') {
+  return String(codclaarchivo).toUpperCase().startsWith('AMBIENTE_');
+}
+
 function dedupeByKey(rows) {
   const map = new Map();
+
   for (const r of rows) {
-    const key = `${r.codprodu}|${r.codclaarchivo}`;
+    const ambiente = isAmbiente(r.codclaarchivo);
+    const fic = ambiente ? `|${String(r.ficadjunto ?? '')}` : '';
+    const key = `${r.codprodu}|${r.codclaarchivo}${fic}`;
+
     const prev = map.get(key);
     const rMs = r?.fecftpmod ? new Date(r.fecftpmod).getTime() : 0;
     const pMs = prev?.fecftpmod ? new Date(prev.fecftpmod).getTime() : 0;
+
     if (!prev || rMs >= pMs) map.set(key, r);
   }
+
   return Array.from(map.values());
 }
+
 
 export async function upsertImagesBatch(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return { insertedOrUpdated: 0 };
