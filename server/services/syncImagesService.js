@@ -1,11 +1,14 @@
 import { pool } from '../db/db.js';
 
-function toMs(dateOrMs) {
-  if (!dateOrMs) return null;
+function toDate(dateOrMs) {
+  if (dateOrMs === null || dateOrMs === undefined) return null;
   if (dateOrMs instanceof Date) return dateOrMs;
 
   const n = Number(dateOrMs);
-  return Number.isFinite(n) ? new Date(n) : null;
+  if (Number.isFinite(n)) return new Date(n);
+
+  const d = new Date(String(dateOrMs));
+  return Number.isFinite(d.getTime()) ? d : null;
 }
 
 function normalizarTexto(value = '') {
@@ -22,9 +25,6 @@ function isAmbiente(codclaarchivo = '') {
 
 /**
  * Devuelve el nombre de archivo a partir de una URL o ruta.
- * Ej:
- *  - "https://x/y/123%20SALON%2001.jpg" => "123 SALON 01.jpg"
- *  - "/a/b/123 SALON 01.jpg" => "123 SALON 01.jpg"
  */
 function extraerNombreArchivoDesdeFicAdjunto(ficadjunto = '') {
   const s = String(ficadjunto || '').trim();
@@ -40,9 +40,11 @@ function extraerNombreArchivoDesdeFicAdjunto(ficadjunto = '') {
 }
 
 /**
- * Regla: segunda "palabra" del nombre (sin extensión),
+ * Regla NUEVA (según tu naming):
+ *   codprodu (1ª) + tipdocasociado (2ª) + tipoambiente (3ª) + resto
+ *
  * separadores: espacio, _ o -
- * Ej: "123 SALON 01.jpg" => "SALON"
+ * Ej: "123 AMB SALON 01.jpg" => "SALON"
  */
 function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
   const base = String(nombreArchivo || '')
@@ -50,7 +52,9 @@ function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
     .trim();
 
   const parts = base.split(/[\s_-]+/).filter(Boolean);
-  return parts[1] ? normalizarTexto(parts[1]) : null;
+
+  // 3ª “palabra” del nombre
+  return parts[2] ? normalizarTexto(parts[2]) : null;
 }
 
 function getTipoAmbienteFromRow(row) {
@@ -66,7 +70,7 @@ function getTipoAmbienteFromRow(row) {
 /**
  * Key:
  * - NO AMBIENTE: codprodu|codclaarchivo
- * - AMBIENTE: codprodu|codclaarchivo|tipoAmbiente
+ * - AMBIENTE: codprodu|codclaarchivo|tipoambiente
  */
 function buildKey(row) {
   if (isAmbiente(row.codclaarchivo)) {
@@ -108,7 +112,7 @@ function splitRows(rows) {
 }
 
 /**
- * AMBIENTE: asegura tipoAmbiente siempre que sea posible (si no viene, lo derivamos)
+ * AMBIENTE: asegura tipoambiente siempre que sea posible (si no viene, lo derivamos)
  * NO AMBIENTE: se mantiene null
  */
 function enrichTipoAmbienteAmbiente(rows) {
@@ -140,8 +144,8 @@ async function upsertNoAmbiente(rows) {
       null, // tipoambiente (NO AMBIENTE)
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
-      toMs(r.fecalta) ?? new Date(),
-      toMs(r.fecftpmod) ?? null
+      toDate(r.fecalta) ?? new Date(),
+      toDate(r.fecftpmod) ?? null
     );
   }
 
@@ -181,11 +185,11 @@ async function upsertAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
-      r.tipoambiente ?? null, // AMBIENTE usa tipoAmbiente
+      r.tipoambiente ?? null, // AMBIENTE usa tipoambiente (minúsculas)
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
-      toMs(r.fecalta) ?? new Date(),
-      toMs(r.fecftpmod) ?? null
+      toDate(r.fecalta) ?? new Date(),
+      toDate(r.fecftpmod) ?? null
     );
   }
 
@@ -211,19 +215,13 @@ export async function upsertImagesBatch(rows) {
     return { insertedOrUpdated: 0 };
   }
 
-  // 1) Separamos AMBIENTE / NO AMBIENTE
   const { ambiente, noAmbiente } = splitRows(rows);
 
-  // 2) AMBIENTE: aseguramos tipoAmbiente (si no viene, lo derivamos)
   const ambienteEnriched = enrichTipoAmbienteAmbiente(ambiente);
 
-  // 3) Dedupe:
-  //    - NO AMBIENTE por codprodu+codclaarchivo
-  //    - AMBIENTE por codprodu+codclaarchivo+tipoAmbiente
   const uniqueNoAmbiente = dedupeLatestByKey(noAmbiente);
   const uniqueAmbiente = dedupeLatestByKey(ambienteEnriched);
 
-  // 4) Upserts separados (mantiene comportamiento actual en todo lo que no es AMBIENTE)
   const insertedNoAmbiente = await upsertNoAmbiente(uniqueNoAmbiente);
   const insertedAmbiente = await upsertAmbiente(uniqueAmbiente);
 
