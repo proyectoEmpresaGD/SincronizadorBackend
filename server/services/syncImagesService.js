@@ -200,10 +200,12 @@ async function upsertAmbiente(rows) {
     )
     VALUES ${valuesSql.join(',')}
     ON CONFLICT (codprodu, tipoambiente, codclaarchivo)
-    DO UPDATE SET
+    WHERE codclaarchivo LIKE 'AMBIENTE_%'
+      DO UPDATE SET
       ficadjunto = EXCLUDED.ficadjunto,
       fecultmod = NOW(),
       fecftpmod = EXCLUDED.fecftpmod
+
   `;
 
   await pool.query(sql, params);
