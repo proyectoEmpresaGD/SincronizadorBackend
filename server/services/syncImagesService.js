@@ -225,7 +225,16 @@ export async function upsertImagesBatch(rows) {
   const uniqueAmbiente = dedupeLatestByKey(ambienteEnriched);
 
   const insertedNoAmbiente = await upsertNoAmbiente(uniqueNoAmbiente);
-  const insertedAmbiente = await upsertAmbiente(uniqueAmbiente);
+
+  let insertedAmbiente = 0;
+  try {
+    insertedAmbiente = await upsertAmbiente(uniqueAmbiente);
+  } catch (err) {
+    // No bloqueamos el batch si falla AMBIENTE
+    // Dejamos log para arreglarlo luego
+    console.error('upsertAmbiente falló, se continúa con NO AMBIENTE:', err?.message ?? String(err));
+  }
 
   return { insertedOrUpdated: insertedNoAmbiente + insertedAmbiente };
+
 }
