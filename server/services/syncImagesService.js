@@ -54,7 +54,7 @@ function extraerTipoAmbienteDesdeNombre(nombreArchivo = '') {
 }
 
 function getTipoAmbienteFromRow(row) {
-  const tipoDirecto = normalizarTexto(row.tipoAmbiente || '');
+  const tipoDirecto = normalizarTexto(row.tipoambiente || '');
   if (tipoDirecto) return tipoDirecto;
 
   const nombre = extraerNombreArchivoDesdeFicAdjunto(row.ficadjunto);
@@ -114,7 +114,7 @@ function splitRows(rows) {
 function enrichTipoAmbienteAmbiente(rows) {
   return rows.map((r) => {
     const tipo = getTipoAmbienteFromRow(r);
-    return { ...r, tipoAmbiente: tipo || null };
+    return { ...r, tipoambiente: tipo || null };
   });
 }
 
@@ -137,7 +137,7 @@ async function upsertNoAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
-      null, // tipoAmbiente (NO AMBIENTE)
+      null, // tipoambiente (NO AMBIENTE)
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
       toMs(r.fecalta) ?? new Date(),
@@ -148,7 +148,7 @@ async function upsertNoAmbiente(rows) {
   const sql = `
     INSERT INTO imagenesftpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
-      tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+      tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
     ON CONFLICT (codprodu, codclaarchivo)
@@ -181,7 +181,7 @@ async function upsertAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
-      r.tipoAmbiente ?? null, // AMBIENTE usa tipoAmbiente
+      r.tipoambiente ?? null, // AMBIENTE usa tipoAmbiente
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
       toMs(r.fecalta) ?? new Date(),
@@ -192,10 +192,10 @@ async function upsertAmbiente(rows) {
   const sql = `
     INSERT INTO imagenesftpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
-      tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+      tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-    ON CONFLICT (codprodu, tipoAmbiente, codclaarchivo)
+    ON CONFLICT (codprodu, tipoambiente, codclaarchivo)
     DO UPDATE SET
       ficadjunto = EXCLUDED.ficadjunto,
       fecultmod = NOW(),
