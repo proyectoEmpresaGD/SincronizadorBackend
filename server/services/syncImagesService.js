@@ -146,7 +146,7 @@ async function upsertNoAmbiente(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesocproductos_test (
+    INSERT INTO imagenesftpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
       tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
@@ -190,7 +190,7 @@ async function upsertAmbiente(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesocproductos_test (
+    INSERT INTO imagenesftpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
       tipoAmbiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
