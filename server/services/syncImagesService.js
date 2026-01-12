@@ -155,11 +155,13 @@ async function upsertNoAmbiente(rows) {
       tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-    ON CONFLICT (codprodu, codclaarchivo)
-    DO UPDATE SET
-      ficadjunto = EXCLUDED.ficadjunto,
-      fecultmod = NOW(),
-      fecftpmod = EXCLUDED.fecftpmod
+ ON CONFLICT (codprodu, codclaarchivo)
+WHERE ((codclaarchivo)::text !~~ 'AMBIENTE_%'::text)
+DO UPDATE SET
+  ficadjunto = EXCLUDED.ficadjunto,
+  fecultmod = NOW(),
+  fecftpmod = EXCLUDED.fecftpmod
+
   `;
 
   await pool.query(sql, params);
@@ -199,12 +201,13 @@ async function upsertAmbiente(rows) {
       tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-    ON CONFLICT (codprodu, tipoambiente, codclaarchivo)
-    WHERE codclaarchivo LIKE 'AMBIENTE_%'
-      DO UPDATE SET
-      ficadjunto = EXCLUDED.ficadjunto,
-      fecultmod = NOW(),
-      fecftpmod = EXCLUDED.fecftpmod
+ON CONFLICT (codprodu, tipoambiente, codclaarchivo)
+WHERE ((codclaarchivo)::text ~~ 'AMBIENTE_%'::text)
+DO UPDATE SET
+  ficadjunto = EXCLUDED.ficadjunto,
+  fecultmod = NOW(),
+  fecftpmod = EXCLUDED.fecftpmod
+
 
   `;
 
