@@ -203,7 +203,7 @@ async function upsertAmbiente(rows) {
       nombre, tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-ON CONFLICT (codprodu, nombre, codclaarchivo)
+ON CONFLICT (codprodu, codclaarchivo)
 WHERE ((codclaarchivo)::text ~~ 'AMBIENTE_%'::text)
 DO UPDATE SET
   ficadjunto = EXCLUDED.ficadjunto,
