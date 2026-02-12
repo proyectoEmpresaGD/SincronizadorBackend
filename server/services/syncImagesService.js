@@ -70,12 +70,12 @@ function getTipoAmbienteFromRow(row) {
 /**
  * Key:
  * - NO AMBIENTE: codprodu|codclaarchivo
- * - AMBIENTE: codprodu|codclaarchivo|tipoambiente
+ * - AMBIENTE: codprodu|codclaarchivo|nombre
  */
 function buildKey(row) {
   if (isAmbiente(row.codclaarchivo)) {
-    const tipo = getTipoAmbienteFromRow(row);
-    return `${row.codprodu}|${row.codclaarchivo}|${tipo || ''}`;
+    const nombre = normalizarTexto(row.nombre || '');
+    return `${row.codprodu}|${row.codclaarchivo}|${nombre || ''}`;
   }
   return `${row.codprodu}|${row.codclaarchivo}`;
 }
@@ -131,7 +131,7 @@ async function upsertNoAmbiente(rows) {
 
   for (const r of rows) {
     valuesSql.push(
-      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
+      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
     );
 
     params.push(
@@ -141,6 +141,7 @@ async function upsertNoAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
+      null, // nombre (NO AMBIENTE)
       null, // tipoambiente (NO AMBIENTE)
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
@@ -150,9 +151,9 @@ async function upsertNoAmbiente(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesproductoswebp (
+    INSERT INTO imagenesproductoswebpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
-      tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+      nombre, tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
  ON CONFLICT (codprodu, codclaarchivo)
@@ -177,7 +178,7 @@ async function upsertAmbiente(rows) {
 
   for (const r of rows) {
     valuesSql.push(
-      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
+      `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, NOW(), $${i++})`
     );
 
     params.push(
@@ -187,7 +188,8 @@ async function upsertAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
-      r.tipoambiente ?? null, // AMBIENTE usa tipoambiente (minúsculas)
+      r.nombre ?? null, // AMBIENTE usa nombre secuencial (AMBIENTE1, AMBIENTE2...)
+      r.tipoambiente ?? null, // compatibilidad
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
       toDate(r.fecalta) ?? new Date(),
@@ -196,12 +198,12 @@ async function upsertAmbiente(rows) {
   }
 
   const sql = `
-    INSERT INTO imagenesproductoswebp (
+    INSERT INTO imagenesproductoswebpproductos (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
-      tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
+      nombre, tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-ON CONFLICT (codprodu, tipoambiente, codclaarchivo)
+ON CONFLICT (codprodu, nombre, codclaarchivo)
 WHERE ((codclaarchivo)::text ~~ 'AMBIENTE_%'::text)
 DO UPDATE SET
   ficadjunto = EXCLUDED.ficadjunto,
@@ -239,5 +241,4 @@ export async function upsertImagesBatch(rows) {
   }
 
   return { insertedOrUpdated: insertedNoAmbiente + insertedAmbiente };
-
 }
