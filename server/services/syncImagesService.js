@@ -40,7 +40,7 @@ function extraerNombreArchivoDesdeFicAdjunto(ficadjunto = '') {
 }
 
 /**
- * Regla NUEVA (según tu naming):
+ * Regla (según tu naming):
  *   codprodu (1ª) + tipdocasociado (2ª) + tipoambiente (3ª) + resto
  *
  * separadores: espacio, _ o -
@@ -71,6 +71,9 @@ function getTipoAmbienteFromRow(row) {
  * Key:
  * - NO AMBIENTE: codprodu|codclaarchivo
  * - AMBIENTE: codprodu|codclaarchivo|nombre
+ *
+ * Nota: si tu BD realmente usa UNIQUE (codprodu, codclaarchivo),
+ * el key de AMBIENTE con nombre sirve solo para de-dupe en el batch (no para el ON CONFLICT).
  */
 function buildKey(row) {
   if (isAmbiente(row.codclaarchivo)) {
@@ -112,7 +115,7 @@ function splitRows(rows) {
 }
 
 /**
- * AMBIENTE: asegura tipoambiente siempre que sea posible (si no viene, lo derivamos)
+ * AMBIENTE: asegura tipoambiente siempre que sea posible
  * NO AMBIENTE: se mantiene null
  */
 function enrichTipoAmbienteAmbiente(rows) {
@@ -156,13 +159,16 @@ async function upsertNoAmbiente(rows) {
       nombre, tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
- ON CONFLICT (codprodu, codclaarchivo)
-WHERE ((codclaarchivo)::text !~~ 'AMBIENTE_%'::text)
-DO UPDATE SET
-  ficadjunto = EXCLUDED.ficadjunto,
-  fecultmod = NOW(),
-  fecftpmod = EXCLUDED.fecftpmod
-
+    ON CONFLICT (codprodu, codclaarchivo)
+    WHERE ((codclaarchivo)::text !~~ 'AMBIENTE_%'::text)
+    DO UPDATE SET
+      ficadjunto = EXCLUDED.ficadjunto,
+      fecultmod = NOW(),
+      fecftpmod = EXCLUDED.fecftpmod
+    WHERE
+      COALESCE(imagenesproductoswebp.fecftpmod, 'epoch'::timestamp)
+        < COALESCE(EXCLUDED.fecftpmod, 'epoch'::timestamp)
+      OR imagenesproductoswebp.ficadjunto IS DISTINCT FROM EXCLUDED.ficadjunto
   `;
 
   await pool.query(sql, params);
@@ -188,8 +194,8 @@ async function upsertAmbiente(rows) {
       Number(r.linea ?? 1),
       r.descripcion ?? null,
       String(r.codclaarchivo),
-      r.nombre ?? null, // AMBIENTE usa nombre secuencial (AMBIENTE1, AMBIENTE2...)
-      r.tipoambiente ?? null, // compatibilidad
+      r.nombre ?? null,       // AMBIENTE
+      r.tipoambiente ?? null, // AMBIENTE
       String(r.ficadjunto),
       r.tipdocasociado ?? null,
       toDate(r.fecalta) ?? new Date(),
@@ -197,20 +203,28 @@ async function upsertAmbiente(rows) {
     );
   }
 
+  // FIX: para AMBIENTE el WHERE debe ser ~~ 'AMBIENTE_%' (no el contrario)
+  // y actualizamos también nombre/tipoambiente si cambian.
   const sql = `
     INSERT INTO imagenesproductoswebp (
       empresa, ejercicio, codprodu, linea, descripcion, codclaarchivo,
       nombre, tipoambiente, ficadjunto, tipdocasociado, fecalta, fecultmod, fecftpmod
     )
     VALUES ${valuesSql.join(',')}
-ON CONFLICT (codprodu, codclaarchivo)
-WHERE ((codclaarchivo)::text ~~ 'AMBIENTE_%'::text)
-DO UPDATE SET
-  ficadjunto = EXCLUDED.ficadjunto,
-  fecultmod = NOW(),
-  fecftpmod = EXCLUDED.fecftpmod
-
-
+    ON CONFLICT (codprodu, codclaarchivo)
+    WHERE ((codclaarchivo)::text ~~ 'AMBIENTE_%'::text)
+    DO UPDATE SET
+      ficadjunto = EXCLUDED.ficadjunto,
+      fecultmod = NOW(),
+      fecftpmod = EXCLUDED.fecftpmod,
+      nombre = EXCLUDED.nombre,
+      tipoambiente = EXCLUDED.tipoambiente
+    WHERE
+      COALESCE(imagenesproductoswebp.fecftpmod, 'epoch'::timestamp)
+        < COALESCE(EXCLUDED.fecftpmod, 'epoch'::timestamp)
+      OR imagenesproductoswebp.ficadjunto IS DISTINCT FROM EXCLUDED.ficadjunto
+      OR imagenesproductoswebp.nombre IS DISTINCT FROM EXCLUDED.nombre
+      OR imagenesproductoswebp.tipoambiente IS DISTINCT FROM EXCLUDED.tipoambiente
   `;
 
   await pool.query(sql, params);
@@ -236,7 +250,6 @@ export async function upsertImagesBatch(rows) {
     insertedAmbiente = await upsertAmbiente(uniqueAmbiente);
   } catch (err) {
     // No bloqueamos el batch si falla AMBIENTE
-    // Dejamos log para arreglarlo luego
     console.error('upsertAmbiente falló, se continúa con NO AMBIENTE:', err?.message ?? String(err));
   }
 

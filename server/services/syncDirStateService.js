@@ -19,6 +19,7 @@ export async function upsertDirStateBatch(rows) {
     DO UPDATE SET
       last_dir_mod = EXCLUDED.last_dir_mod,
       updated_at = NOW()
+    WHERE ftp_sync_state.last_dir_mod IS DISTINCT FROM EXCLUDED.last_dir_mod
   `;
 
   await pool.query(sql, params);
